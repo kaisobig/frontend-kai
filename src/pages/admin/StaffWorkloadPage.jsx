@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Typography, Pagination, Spin, Alert } from 'antd';
+import { Table, Typography, Pagination, Spin, Alert, Button } from 'antd';
 import staffService from '../../services/staffService';
 import TaskModal from '../../components/TaskModal';
 
@@ -32,21 +32,9 @@ const StaffWorkloadPage = () => {
     {
       title: '', // คอลัมน์สำหรับปุ่ม "ดูงาน"
       render: (_, record) => (
-        <button
-          type="button"
-          onClick={() => setSelectedStaff(record)}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            margin: 0,
-            color: '#1677ff',
-            textDecoration: 'underline',
-            cursor: 'pointer'
-          }}
-        >
+        <Button type="link" onClick={() => setSelectedStaff(record)}>
           ดูงาน
-        </button>
+        </Button>
       )
     }
   ];
@@ -88,6 +76,7 @@ const StaffWorkloadPage = () => {
                 columns={columns}
                 rowKey="user_id"
                 pagination={false}
+                bordered={false}
               />
             </div>
 

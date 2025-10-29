@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useContext } from 'react';
+// import { Typography, Spin, Input } from 'antd';
 import { Typography, Spin } from 'antd';
 import ticketService from '../services/ticketService';
 import userService from '../services/userService';
@@ -21,20 +22,37 @@ const TicketListPage = () => {
   const [staffList, setStaffList] = useState([]); // รายชื่อ staff/admin
   const observerRef = useRef(null); // สำหรับดัก scroll ถึงท้าย list
 
-  const [filters, setFilters] = useState({
+  // บันทึกค่า filters & searchInput ใน sessionStorage
+  const STORAGE_KEY = 'ticketListFilters_v1';
+  const loadSaved = () => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  };
+  const saved = loadSaved();
+
+  // ค้นหาแบบ local ก่อนเพื่อไม่ให้ยิง API ตอนพิมพ์
+  const [searchInput, setSearchInput] = useState(() => saved?.searchInput ?? '');
+
+  const [filters, setFilters] = useState(() => ({
     status: '',
     assignee_id: '',
     sort_by: 'updated_at',
     sort_order: 'DESC',
-  });
+    search: '',
+    ...(saved?.filters ?? {}), // <- ใช้ค่าที่เคยเลือกไว้ทันที
+  }));
 
   // อัปเดตค่าฟิลเตอร์เมื่อผู้ใช้เลือกเปลี่ยน
   const handleFilterChange = (name, value) =>
     setFilters((prev) => ({ ...prev, [name]: value }));
 
   // รีเซ็ตฟิลเตอร์กลับเป็นค่าเริ่มต้น
-  const resetFilters = () =>
-    setFilters({ status: '', assignee_id: '', sort_by: 'updated_at', sort_order: 'DESC' });
+  const resetFilters = () => {
+    setFilters({ status: '', assignee_id: '', sort_by: 'updated_at', sort_order: 'DESC', search: '' });
+    setSearchInput(''); // รีเซ็ตช่องกรอกค้นหา
+  };
 
   // ดึงรายชื่อผู้ใช้ที่เป็น staff หรือ admin สำหรับใช้ในฟิลเตอร์
   const fetchStaffAndAdminUsers = useCallback(async () => {
@@ -49,7 +67,7 @@ const TicketListPage = () => {
 
   // โหลด ticket จาก backend ตามฟิลเตอร์และหน้าปัจจุบัน
   const fetchTickets = useCallback(async (page = 1) => {
-    if (isLoading || !hasMore) return;
+    // อย่าผูกกับ isLoading/hasMore เพื่อลดการสร้างฟังก์ชันใหม่
     setIsLoading(true);
 
     try {
@@ -62,11 +80,20 @@ const TicketListPage = () => {
       setHasMore(page < (res.totalPages || 1));
       setCurrentPage(page);
     } catch (err) {
+      // หยุดยิงซ้ำเมื่อ error
+      setHasMore(false);
       toast.error(err.message || 'โหลดข้อมูลล้มเหลว');
     } finally {
       setIsLoading(false);
     }
-  }, [filters, isLoading, hasMore]);
+  }, [filters]);
+
+  // เซฟค่าที่เปลี่ยนกลับไป sessionStorage
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ filters, searchInput }));
+    } catch {}
+  }, [filters, searchInput]);
 
   // โหลดข้อมูลเมื่อ filters เปลี่ยน
   useEffect(() => {
@@ -75,22 +102,45 @@ const TicketListPage = () => {
     setCurrentPage(1);
     setHasMore(true);
     fetchTickets(1); // โหลดหน้าแรกใหม่
-  }, [filters, fetchStaffAndAdminUsers, fetchTickets]); // ✅ เพิ่ม deps ที่ขาด
+  }, [filters, fetchStaffAndAdminUsers, fetchTickets]); // ฟังก์ชันตาม ESLint
 
   // ดัก scroll ถึงท้าย list เพื่อโหลดหน้าใหม่
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasMore) {
+      // เพิ่ม !isLoading กันยิงซ้อน
+      if (entries[0].isIntersecting && hasMore && !isLoading) {
         fetchTickets(currentPage + 1);
       }
     });
     if (observerRef.current) observer.observe(observerRef.current);
     return () => observer.disconnect(); // ยกเลิก observer เมื่อออกจากหน้า
-  }, [fetchTickets, hasMore, currentPage]);
+  }, [fetchTickets, hasMore, currentPage, isLoading]);
 
   return (
     <div className="ticket-list-page">
       <Title level={3}>รายการแจ้งปัญหาทั้งหมด</Title>
+
+      {/* ช่องค้นหา: พิมพ์แล้ว “ยังไม่ค้นหา” จนกว่าจะกดปุ่ม */}
+      {/* <div style={{ marginBottom: 12 }}>
+        <Input.Search
+          allowClear
+          placeholder="พิมพ์ค้นหา: หัวข้อ, ผู้แจ้ง, หมายเลข Ticket..."
+          value={searchInput} // ผูกกับ state local
+          onChange={(e) => setSearchInput(e.target.value)} // ไม่อัปเดต filters ทันที
+          onSearch={(v) => handleFilterChange('search', v)} // กดปุ่มค่อยอัปเดต filters.search
+        />
+      </div> */}
+
+      {/* ช่องค้นหาแบบง่าย พิมพ์แล้วอัปเดต filters.search โดยตรง */}
+      {/* <div style={{ marginBottom: 12 }}>
+        <Input.Search
+          allowClear
+          placeholder="พิมพ์ค้นหา: หัวข้อ, ผู้แจ้ง, หมายเลข Ticket..."
+          value={filters.search}
+          onChange={(e) => handleFilterChange('search', e.target.value)}
+          onSearch={(v) => handleFilterChange('search', v)}
+        />
+      </div> */}
 
       {/* ส่ง isAdmin เข้า TicketFilter เพื่อให้เฉพาะ admin เห็น filter ผู้รับผิดชอบ */}
       <TicketFilter
